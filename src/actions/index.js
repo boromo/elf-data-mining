@@ -20,10 +20,11 @@ function requestData(fileName) {
 }
 
 function receiveData(fileName, json) {
+    console.log(json[0]);
     return {
         type: RECEIVE_DATA,
         fileName,
-        data: json,
+        data: json[0],
         receivedAt: Date.now()
     }
 }

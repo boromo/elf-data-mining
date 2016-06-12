@@ -3,6 +3,7 @@ var app        = express();                 // define our app using express
 var bodyParser = require('body-parser');
 var cors       = require('cors');
 var fs         = require('fs');
+var utils      = require('./js/utils');
 
 // configure app to use bodyParser()
 // this will let us get the data from a POST
@@ -30,13 +31,12 @@ router.route('/:fileName')
 
         fs.exists(fileName, function (exists) {
             if(exists) {
-                res.json(require(fileName));
+                res.json(utils.normalizeData(require(fileName).symbols.elements, true));
             } else {
                 res.json({error: 'file \'' + req.params.fileName  + '\' not found'});
             }
         });
     });
-
 
 app.use('/api', router);
 

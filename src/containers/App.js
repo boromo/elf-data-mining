@@ -1,6 +1,7 @@
 import React, { Component, PropTypes } from 'react';
 import { connect } from 'react-redux';
 import { selectData, fetchDataIfNeeded, invalidateData } from '../actions';
+import Chart from '../components/Chart';
 
 class App extends Component {
     constructor(props) {
@@ -35,13 +36,18 @@ class App extends Component {
 
     render() {
         const { selectedData, data, isFetching, lastUpdated } = this.props;
-        const isEmpty = Object.keys(data).length === 0;
         return (
             <div>
-                {
-                    !isEmpty ?
-                        JSON.stringify(data):
-                        'Loading...'
+                {isFetching && Object.keys(data).length === 0 &&
+                <h2>Loading...</h2>
+                }
+                {!isFetching && Object.keys(data).length === 0 &&
+                <h2>Empty.</h2>
+                }
+                {Object.keys(data).length > 0 &&
+                <div style={{ opacity: isFetching ? 0.5 : 1 }}>
+                    <Chart data={data} />
+                </div>
                 }
             </div>
         );
@@ -64,7 +70,7 @@ function mapStateToProps(state) {
         data: data
     } = elfData[selectedData] || {
         isFetching: true,
-        data: {} // Posts to empty array
+        data: {} // Default data to empty object
     };
 
     return {

@@ -1,7 +1,7 @@
 /* Base Application Styles */
 body {
     color: #fff;
-    background: #222;
+    background: #fff;
 }
 
 .index img {
@@ -18,4 +18,26 @@ body {
     border: 1px solid #000;
     border-width: 1px 0;
     background: #666;
+}
+
+.chart {
+    display: block;
+    margin: auto;
+    margin-top: 60px;
+    font-size: 11px;
+}
+
+rect {
+    stroke: #eee;
+    fill: #aaa;
+    fill-opacity: .8;
+}
+
+rect.parent {
+    cursor: pointer;
+    fill: steelblue;
+}
+
+text {
+    pointer-events: none;
 }
