@@ -5,105 +5,216 @@ import React, { Component, PropTypes } from 'react';
 import ReactDOM from 'react-dom';
 import d3 from 'd3';
 
-const width = 1120;
-const height = 2000;
-const x = d3.scale.linear().range([0, width]);
-const y = d3.scale.linear().range([0, height]);
-
 class Chart extends Component {
     constructor(props) {
         super(props);
     }
     componentDidMount() {
         var dom =  ReactDOM.findDOMNode(this);
-        this.initD3Chart(dom, this.props.data);
+        // this.initD3Chart(dom, this.props.data);
+        this.initCanvasChart(dom, this.props.data);
     }
     shouldComponentUpdate() {
         var dom =  ReactDOM.findDOMNode(this);
-        this.initD3Chart(dom, this.props.data);
+        // this.initD3Chart(dom, this.props.data);
+        this.initCanvasChart(dom, this.props.data);
         return false;
     }
-    initD3Chart(dom, root) {
-        const vis = d3.select(dom).append('div')
-            .attr('class', 'chart')
-            .style('width', width + 'px')
-            .style('height', height + 'px')
-            .append('svg:svg')
+
+    componentWillUnmount() {
+        // Clean up D3 after unmount
+        d3.timerFlush();
+        d3.select(ReactDOM.findDOMNode(this)).remove();
+    }
+
+    initCanvasChart(dom, root) {
+        const width = 1200;
+        const height = 700;
+
+        const centerX = width/2;
+        const centerY = height/2;
+
+        //Create the visible canvas and context
+        const canvas  = d3.select(dom).append('canvas')
+            .attr('id', 'canvas')
             .attr('width', width)
             .attr('height', height);
+        const context = canvas.node().getContext('2d');
+        context.clearRect(0, 0, width, height);
 
-        const partition = d3.layout.partition()
-            .value(function(d) { return d.size; });
+        //Create a hidden canvas in which each circle will have a different color
+        //We can use this to capture the clicked on circle
+        const hiddenCanvas  = d3.select(dom).append('canvas')
+            .attr('id', 'hiddenCanvas')
+            .attr('width', width)
+            .attr('height', height)
+            .style('display','none');
+        const hiddenContext = hiddenCanvas.node().getContext('2d');
+        hiddenContext.clearRect(0, 0, width, height);
 
+        // SCALES
+        const colorCircle = d3.scale.ordinal()
+            .domain([0,1,2,3])
+            .range(['#bfbfbf','#838383','#4c4c4c','#1c1c1c']);
 
-        const g = vis.selectAll('g')
-            .data(partition.nodes(root))
-            .enter().append('svg:g')
-            .attr('transform', function (d) {
-                return 'translate(' + x(d.y) + ',' + y(d.x) + ')';
-            })
-            .on('click', click);
+        const diameter = Math.min(width*0.9, height*0.9);
 
-        let kx = width / root.dx,
-            ky = height / 1;
-
-        const transform = (d) => {
-            return "translate(8," + d.dx * ky / 2 + ")";
+        const zoomInfo = {
+            centerX: width / 2,
+            centerY: height / 2,
+            scale: 1
         };
 
-        g.append('svg:rect')
-            .attr('width', root.dy * kx)
-            .attr('height', function (d) {
-                return d.dx * ky;
-            })
-            .attr('class', function (d) {
-                return d.children ? 'parent' : 'child';
-            });
+        //Dataset to swtich between color of a circle (in the hidden canvas) and the node data
+        const colToCircle = {};
 
+        const pack = d3.layout.pack()
+            .padding(1)
+            .size([diameter, diameter])
+            .value(function(d) { return d.size; })
+            .sort(function(d) { return d.ID; });
 
-        // g.append('svg:text')
-        //     .attr('transform', transform)
-        //     .attr('dy', '.35em')
-        //     .style('opacity', function (d) {
-        //         return d.dx * ky > 12 ? 1 : 0;
-        //     })
-        //     .text(function (d) {
-        //         return d.name;
-        //     })
+        const nodes = pack.nodes(root);
+        let focus = root;
 
-        d3.select(window)
-            .on('click', function () {
-                click(root);
-            });
+        // CANVAS DRAW
 
-        function click(d) {
-            if (!d.children) return;
+        const cWidth = canvas.attr('width');
+        const cHeight = canvas.attr('height');
+        const nodeCount = nodes.length;
 
-            kx = (d.y ? width - 40 : width) / (1 - d.y);
-            ky = height / d.dx;
-            x.domain([d.y, 1]).range([d.y ? 40 : 0, width]);
-            y.domain([d.x, d.x + d.dx]);
+        //The draw function of the canvas that gets called on each frame
+        const drawCanvas = (chosenContext, hidden) => {
+            //Clear canvas
+            chosenContext.fillStyle = '#fff';
+            chosenContext.rect(0,0,cWidth,cHeight);
+            chosenContext.fill();
 
-            var t = g.transition()
-                .duration(d3.event.altKey ? 7500 : 750)
-                .attr("transform", function(d) { return "translate(" + x(d.y) + "," + y(d.x) + ")"; });
+            //Select our dummy nodes and draw the data to canvas.
+            let node = null;
 
-            t.select("rect")
-                .attr("width", d.dy * kx)
-                .attr("height", function(d) { return d.dx * ky; });
+            // It's slightly faster than nodes.forEach()
+            for (let i = 0; i < nodeCount; i++) {
+                node = nodes[i];
 
-            t.select("text")
-                .attr("transform", transform)
-                .style("opacity", function(d) { return d.dx * ky > 12 ? 1 : 0; });
+                //If the hidden canvas was send into this function and it does not yet have a color, generate a unique one
+                if(hidden) {
+                    if(node.color == null) {
+                        // If we have never drawn the node to the hidden canvas get a new color for it and put it in the dictionary.
+                        node.color = genColor();
+                        colToCircle[node.color] = node;
+                    }//if
+                    // On the hidden canvas each rectangle gets a unique color.
+                    chosenContext.fillStyle = node.color;
+                } else {
+                    chosenContext.fillStyle = node.children ? colorCircle(node.depth) : 'white';
+                }//else
 
-            d3.event.stopPropagation();
+                //Draw each circle
+                chosenContext.beginPath();
+                chosenContext.arc(((node.x - zoomInfo.centerX) * zoomInfo.scale) + centerX,
+                    ((node.y - zoomInfo.centerY) * zoomInfo.scale) + centerY,
+                    node.r * zoomInfo.scale, 0,  2 * Math.PI, true);
+                chosenContext.fill();
+            } // for i
         }
+
+        // Listen for clicks on the main canvas
+        document.getElementById('canvas').addEventListener('click', (e) => {
+            const node = getColBasedOnPosition(e);
+            if (node) {
+                if (focus !== node) zoomToCanvas(node); else zoomToCanvas(root);
+            }
+        });
+
+        document.getElementById('canvas').addEventListener('mousemove', (e) =>{
+            const node = getColBasedOnPosition(e);
+            console.log(node);
+        }, false);
+
+        const getColBasedOnPosition = (e) => {
+            // We actually only need to draw the hidden canvas when there is an interaction.
+            // This sketch can draw it on each loop, but that is only for demonstration.
+            drawCanvas(hiddenContext, true);
+
+            //Figure out where the mouse click occurred.
+            const mouseX = e.layerX;
+            const mouseY = e.layerY;
+
+            // Get the corresponding pixel color on the hidden canvas and look up the node in our map.
+            // This will return that pixel's color
+            const col = hiddenContext.getImageData(mouseX, mouseY, 1, 1).data;
+            //Our map uses these rgb strings as keys to nodes.
+            const colString = 'rgb(' + col[0] + ',' + col[1] + ',' + col[2] + ')';
+            const node = colToCircle[colString];
+
+            return node || false;
+        };
+
+        //Based on the generous help by Stephan Smola
+        //http://bl.ocks.org/smoli/d7e4f9199c15d71258b5
+
+        const ease = d3.ease('cubic-in-out');
+        let timeElapsed = 0;
+        let vOld = [focus.x, focus.y, focus.r * 2.05];
+        let interpolator = null;
+        let duration = 2000;
+
+        //Create the interpolation function between current view and the clicked on node
+        function zoomToCanvas(focusNode) {
+            focus = focusNode;
+            var v = [focus.x, focus.y, focus.r * 2.05]; //The center and width of the new 'viewport'
+
+            interpolator = d3.interpolateZoom(vOld, v); //Create interpolation between current and new 'viewport'
+
+            duration = 	interpolator.duration; //Interpolation gives back a suggested duration
+            timeElapsed = 0; //Set the time elapsed for the interpolateZoom function to 0
+            vOld = v; //Save the 'viewport' of the next state as the next 'old' state
+        }
+
+        //Perform the interpolation and continuously change the zoomInfo while the 'transition' occurs
+        function interpolateZoom(dt) {
+            if (interpolator) {
+                timeElapsed += dt;
+                var t = ease(timeElapsed / duration);
+
+                zoomInfo.centerX = interpolator(t)[0];
+                zoomInfo.centerY = interpolator(t)[1];
+                zoomInfo.scale = diameter / interpolator(t)[2];
+
+                if (timeElapsed >= duration) interpolator = null;
+            }//if
+        }
+
+        //Generates the next color in the sequence, going from 0,0,0 to 255,255,255.
+        //From: https://bocoup.com/weblog/2d-picking-in-canvas
+        let nextCol = 1;
+        function genColor(){
+            var ret = [];
+            // via http://stackoverflow.com/a/15804183
+            if(nextCol < 16777215){
+                ret.push(nextCol & 0xff); // R
+                ret.push((nextCol & 0xff00) >> 8); // G
+                ret.push((nextCol & 0xff0000) >> 16); // B
+
+                nextCol += 100; // This is exagerated for this example and would ordinarily be 1.
+            }
+            var col = 'rgb(' + ret.join(',') + ')';
+            return col;
+        }
+
+        var dt = 0;
+        d3.timer(function(elapsed) {
+            interpolateZoom(elapsed - dt);
+            dt = elapsed;
+            drawCanvas(context);
+        });
+        zoomToCanvas(root);
     }
 
     render() {
         return (
-            <div id="char">
-            </div>
+            <div id="char"></div>
         );
     }
 }
